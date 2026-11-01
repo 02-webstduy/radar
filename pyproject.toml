@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "radar"
+version = "0.1.0"
+description = "每日技术雷达：按角色采集 + 关键词筛选 + 只读页面"
+requires-python = ">=3.11"
+dependencies = [
+  "httpx>=0.27",
+  "feedparser>=6.0",
+  "fastapi>=0.110",
+  "uvicorn>=0.29",
+]
+
+[project.scripts]
+radar = "radar.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

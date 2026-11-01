@@ -1,0 +1,20 @@
+[app]
+name = "技术雷达"
+port = 8767
+
+[profile]
+role = "engineer"
+# 关键词就是第一道筛选：标题/摘要里出现任意一个才保留
+keywords = [
+  "agent", "智能体", "多智能体",
+  "llm", "大模型", "rag", "检索增强",
+  "inference", "推理", "vllm", "sglang",
+  "fine-tun", "微调", "量化", "部署",
+  "embedding", "向量", "mcp", "function calling", "工具调用",
+  "eval", "评测", "benchmark", "context", "上下文", "知识图谱",
+]
+max_items = 8
+lookback_days = 7
+
+[source]
+weights = { github = 1.0, arxiv = 1.0, hn = 0.9, juejin = 1.0, sspai = 1.0 }
