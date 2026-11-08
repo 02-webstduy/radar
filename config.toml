@@ -16,5 +16,11 @@ keywords = [
 max_items = 8
 lookback_days = 7
 
+[storage]
+# SQLite 文件就在这台服务器上；相对路径基于项目根
+path = "data/radar.db"
+# 每天的分界线按这个时区算
+timezone = "Asia/Shanghai"
+
 [source]
 weights = { github = 1.0, arxiv = 1.0, hn = 0.9, juejin = 1.0, sspai = 1.0 }

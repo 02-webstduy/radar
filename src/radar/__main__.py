@@ -1,4 +1,4 @@
-"""CLI：`python -m radar`（跑一次，打印）或 `python -m radar serve`（起页面）。"""
+"""CLI：run（抓取+打印）/ ingest（抓取+入库）/ serve（起页面）/ stats（看库）。"""
 
 from __future__ import annotations
 
@@ -9,7 +9,8 @@ import json
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="radar")
-    parser.add_argument("cmd", nargs="?", default="run", choices=["run", "serve"])
+    parser.add_argument("cmd", nargs="?", default="run",
+                        choices=["run", "ingest", "serve", "stats"])
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -27,16 +28,30 @@ def main(argv: list[str] | None = None) -> None:
         return
 
     from .config import load
-    from .pipeline import collect
+    from .pipeline import ingest, local_day
+    from .storage import Store
 
-    items = asyncio.run(collect(load()))
-    for it in items:
-        print(f"[{it.source}] {it.title}")
-        print(f"    {it.url}")
-        print(f"    命中：{'、'.join(it.matched)} · {it.summary[:80]}\n")
+    cfg = load()
+    store = Store(cfg.db_path)
+
+    if args.cmd == "stats":
+        print(json.dumps(
+            {"stats": store.stats(), "last_run": store.last_run()},
+            ensure_ascii=False, indent=2,
+        ))
+        return
+
+    info = asyncio.run(ingest(cfg, store))
+    print(f"抓取 {info['fetched']} 条，入榜 {info['kept']} 条（{info['day']}）")
+
+    rows = store.top_items(local_day(cfg))
+    for row in rows:
+        print(f"[{row['source']}] {row['title']}")
+        print(f"    {row['url']}")
+        print(f"    命中：{'、'.join(row['matched'])}\n")
     if args.json:
-        print(json.dumps([it.to_dict() for it in items], ensure_ascii=False, indent=2))
-    print(f"共 {len(items)} 条")
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+    print(f"共 {len(rows)} 条")
 
 
 if __name__ == "__main__":
