@@ -2,109 +2,271 @@
 <html lang="zh-CN">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#14110f" />
     <title>技术雷达</title>
     <style>
       :root {
-        --bg: #14110f; --panel: #1d1916; --line: #302822;
-        --text: #f0e7dd; --muted: #a3958a; --accent: #e8a86a;
+        --bg: #14110f;
+        --panel: #1d1916;
+        --panel-2: #221d19;
+        --line: #302822;
+        --text: #f0e7dd;
+        --muted: #a3958a;
+        --accent: #e8a86a;
+        --radius: 16px;
       }
       * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
       body {
-        margin: 0; background: var(--bg); color: var(--text);
-        font: 15px/1.7 ui-sans-serif, -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
-        max-width: 720px; margin: 0 auto; padding: 20px 16px 60px;
+        margin: 0;
+        background:
+          radial-gradient(120% 60% at 50% -10%, #241b15 0%, transparent 60%),
+          var(--bg);
+        color: var(--text);
+        font: 15px/1.65 ui-sans-serif, -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 0 16px calc(56px + env(safe-area-inset-bottom));
+        -webkit-font-smoothing: antialiased;
       }
-      header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 18px; }
-      h1 { font-size: 18px; margin: 0; }
-      #meta { color: var(--muted); font-size: 12px; flex: 1; }
-      button {
-        background: transparent; border: 1px solid var(--line); color: var(--muted);
-        border-radius: 999px; padding: 4px 12px; font-size: 12px; cursor: pointer;
+
+      /* 顶部 */
+      .top {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 0 12px;
+        background: linear-gradient(to bottom, rgba(20, 17, 15, 0.96) 70%, rgba(20, 17, 15, 0));
+        backdrop-filter: blur(8px);
       }
+      .mark {
+        width: 34px; height: 34px; flex: none;
+        border-radius: 11px;
+        display: grid; place-items: center;
+        background: linear-gradient(135deg, #f0c08a, #c97a44);
+        color: #2a1c10; font-weight: 700; font-size: 15px;
+      }
+      .who { flex: 1; min-width: 0; }
+      h1 { margin: 0; font-size: 17px; letter-spacing: 0.2px; }
+      .sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+      .refresh {
+        flex: none;
+        display: inline-flex; align-items: center; gap: 6px;
+        background: transparent; color: var(--muted);
+        border: 1px solid var(--line); border-radius: 999px;
+        padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer;
+        transition: color .15s ease, border-color .15s ease;
+      }
+      .refresh:hover { color: var(--text); border-color: #4a3d33; }
+      .refresh[disabled] { opacity: .5; cursor: default; }
+
+      /* 过滤器 */
+      .filters { display: flex; gap: 6px; overflow-x: auto; padding: 4px 0 14px; scrollbar-width: none; }
+      .filters::-webkit-scrollbar { display: none; }
+      .chip {
+        flex: none;
+        border: 1px solid var(--line); background: transparent; color: var(--muted);
+        border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 12px; cursor: pointer;
+      }
+      .chip[aria-pressed="true"] { color: #2a1c10; background: var(--accent); border-color: var(--accent); }
+
+      /* 卡片 */
       .card {
-        background: var(--panel); border: 1px solid var(--line);
-        border-radius: 14px; padding: 12px 14px; margin-bottom: 10px;
+        position: relative;
+        background: linear-gradient(180deg, var(--panel-2), var(--panel));
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        padding: 14px 16px 13px 18px;
+        margin-bottom: 10px;
+        overflow: hidden;
       }
-      .card a.title { color: var(--text); text-decoration: none; font-weight: 600; }
-      .card a.title:hover { color: var(--accent); }
-      .tags { margin: 6px 0 2px; display: flex; flex-wrap: wrap; gap: 6px; }
-      .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
-      .tag.src { color: var(--accent); border-color: #57483c; }
-      .sum { color: var(--muted); font-size: 13px; margin-top: 4px; }
-      .hint { color: var(--muted); text-align: center; }
+      .card::before {
+        content: "";
+        position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+        background: var(--src, var(--line));
+      }
+      .card[data-src="GitHub"] { --src: #6ea8fe; }
+      .card[data-src="arXiv"]  { --src: #c9a7ff; }
+      .card[data-src="HN"]     { --src: #ff9f6b; }
+      .card[data-src="掘金"]    { --src: #6fd3e8; }
+      .card[data-src="少数派"]  { --src: #f2b8b5; }
+
+      .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+      .src { color: var(--src); font-size: 11.5px; font-weight: 600; letter-spacing: .3px; }
+      .time { color: var(--muted); font-size: 11.5px; }
+      .card h2 { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.5; }
+      .card h2 a { color: var(--text); text-decoration: none; }
+      .card h2 a:hover { color: var(--accent); }
+      .sum {
+        margin: 7px 0 0; color: var(--muted); font-size: 13px;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      }
+      .kw { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+      .kw span {
+        font-size: 11px; color: #b9a99c; background: rgba(232, 168, 106, .07);
+        border: 1px solid rgba(232, 168, 106, .18); border-radius: 6px; padding: 1px 6px;
+      }
+
+      /* 状态 */
+      .hint { color: var(--muted); text-align: center; font-size: 13px; padding: 28px 0; }
+      .skeleton {
+        height: 96px; border-radius: var(--radius); border: 1px solid var(--line);
+        margin-bottom: 10px;
+        background: linear-gradient(90deg, #1d1916 25%, #26201b 37%, #1d1916 63%);
+        background-size: 400% 100%;
+        animation: shimmer 1.3s ease infinite;
+      }
+      @keyframes shimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
+      footer { margin-top: 22px; color: #7f7268; font-size: 11.5px; text-align: center; line-height: 1.8; }
+
+      @media (prefers-reduced-motion: reduce) {
+        .skeleton { animation: none; }
+        html { scroll-behavior: auto; }
+      }
     </style>
   </head>
   <body>
-    <header>
-      <h1>技术雷达</h1>
-      <span id="meta"></span>
-      <button id="refresh">刷新</button>
+    <header class="top">
+      <div class="mark" aria-hidden="true">◉</div>
+      <div class="who">
+        <h1>技术雷达</h1>
+        <p class="sub" id="sub">正在采集…</p>
+      </div>
+      <button class="refresh" id="refresh" type="button">刷新</button>
     </header>
-    <main id="list"><p class="hint">加载中…</p></main>
+
+    <nav class="filters" id="filters" aria-label="按来源筛选"></nav>
+    <main id="list" aria-live="polite"></main>
+    <footer>关键词筛选 · 每天前 8 条<br />来源：GitHub / arXiv / HN / 掘金 / 少数派</footer>
+
     <script>
       const list = document.getElementById("list");
-      const meta = document.getElementById("meta");
+      const sub = document.getElementById("sub");
+      const filters = document.getElementById("filters");
+      const refresh = document.getElementById("refresh");
+
+      const SOURCE_ORDER = ["GitHub", "arXiv", "HN", "掘金", "少数派"];
+      const ROLE = { engineer: "工程师", researcher: "科研" };
+      let data = null;
+      let active = "全部";
 
       function rel(iso) {
         if (!iso) return "";
-        const d = new Date(iso);
-        const h = Math.round((Date.now() - d.getTime()) / 3600000);
+        const h = Math.round((Date.now() - new Date(iso).getTime()) / 3600000);
         if (h < 1) return "刚刚";
         if (h < 24) return h + " 小时前";
         return Math.round(h / 24) + " 天前";
       }
 
-      async function load() {
-        list.innerHTML = '<p class="hint">加载中…</p>';
-        try {
-          const res = await fetch("/api/items");
-          const data = await res.json();
-          meta.textContent = data.role + " · " + data.items.length + " 条 · " +
-            (data.updated ? new Date(data.updated * 1000).toLocaleTimeString("zh-CN") : "");
-          list.innerHTML = "";
-          if (!data.items.length) {
-            list.innerHTML = '<p class="hint">今天没有命中关键词的条目。</p>';
-            return;
+      function renderFilters() {
+        const sources = SOURCE_ORDER.filter((s) => (data?.items || []).some((i) => i.source === s));
+        const names = ["全部", ...sources];
+        if (!names.includes(active)) active = "全部";
+        filters.replaceChildren(
+          ...names.map((name) => {
+            const b = document.createElement("button");
+            b.className = "chip";
+            b.type = "button";
+            b.textContent = name;
+            b.setAttribute("aria-pressed", String(name === active));
+            b.addEventListener("click", () => { active = name; renderFilters(); renderList(); });
+            return b;
+          })
+        );
+      }
+
+      function renderList() {
+        const items = (data?.items || []).filter((i) => active === "全部" || i.source === active);
+        list.replaceChildren();
+        if (!items.length) {
+          const p = document.createElement("p");
+          p.className = "hint";
+          p.textContent = "这一栏暂时没有命中关键词的条目。";
+          list.appendChild(p);
+          return;
+        }
+        for (const it of items) {
+          const card = document.createElement("article");
+          card.className = "card";
+          card.dataset.src = it.source;
+
+          const top = document.createElement("div");
+          top.className = "card-top";
+          const src = document.createElement("span");
+          src.className = "src";
+          src.textContent = it.source;
+          const time = document.createElement("span");
+          time.className = "time";
+          time.textContent = rel(it.published);
+          top.append(src, time);
+
+          const h2 = document.createElement("h2");
+          const a = document.createElement("a");
+          a.href = it.url; a.target = "_blank"; a.rel = "noopener noreferrer";
+          a.textContent = it.title;
+          h2.appendChild(a);
+
+          card.append(top, h2);
+
+          if (it.summary) {
+            const s = document.createElement("p");
+            s.className = "sum";
+            s.textContent = it.summary;
+            card.appendChild(s);
           }
-          for (const it of data.items) {
-            const card = document.createElement("article");
-            card.className = "card";
 
-            const a = document.createElement("a");
-            a.className = "title"; a.href = it.url; a.target = "_blank"; a.rel = "noopener";
-            a.textContent = it.title;
-            card.appendChild(a);
-
-            const tags = document.createElement("div");
-            tags.className = "tags";
-            const src = document.createElement("span");
-            src.className = "tag src"; src.textContent = it.source;
-            tags.appendChild(src);
-            const when = document.createElement("span");
-            when.className = "tag"; when.textContent = rel(it.published);
-            tags.appendChild(when);
-            for (const k of (it.matched || [])) {
+          if (it.matched?.length) {
+            const kw = document.createElement("div");
+            kw.className = "kw";
+            for (const k of it.matched) {
               const t = document.createElement("span");
-              t.className = "tag"; t.textContent = k;
-              tags.appendChild(t);
+              t.textContent = k;
+              kw.appendChild(t);
             }
-            card.appendChild(tags);
-
-            if (it.summary) {
-              const s = document.createElement("p");
-              s.className = "sum"; s.textContent = it.summary;
-              card.appendChild(s);
-            }
-            list.appendChild(card);
+            card.appendChild(kw);
           }
-        } catch (err) {
-          list.innerHTML = '<p class="hint">加载失败：' + err.message + "</p>";
+
+          list.appendChild(card);
         }
       }
 
-      document.getElementById("refresh").addEventListener("click", load);
+      function skeleton() {
+        list.replaceChildren(
+          ...Array.from({ length: 3 }, () => {
+            const d = document.createElement("div");
+            d.className = "skeleton";
+            return d;
+          })
+        );
+      }
+
+      async function load() {
+        refresh.disabled = true;
+        skeleton();
+        try {
+          const res = await fetch("/api/items");
+          data = await res.json();
+          const when = data.updated ? new Date(data.updated * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
+          sub.textContent = `${ROLE[data.role] || data.role} · ${data.items.length} 条` + (when ? ` · ${when} 更新` : "");
+          renderFilters();
+          renderList();
+        } catch (err) {
+          list.innerHTML = "";
+          const p = document.createElement("p");
+          p.className = "hint";
+          p.textContent = "加载失败：" + err.message;
+          list.appendChild(p);
+          sub.textContent = "连接失败";
+        } finally {
+          refresh.disabled = false;
+        }
+      }
+
+      refresh.addEventListener("click", load);
       load();
     </script>
   </body>
