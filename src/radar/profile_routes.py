@@ -1,20 +1,17 @@
-"""画像入口：独立端口 8768，聊天/表单两种方式，结果写同一个 SQLite。"""
+"""画像页面与接口：挂在主站点 /profile，不再单开端口。"""
 
 from __future__ import annotations
 
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .config import load
 from .profile_flow import QUESTIONS, build_narrative, derive_keywords, question_at
-from .storage import Store
+from .runtime import cfg, store
 
-cfg = load()
-store = Store(cfg.db_path)
-app = FastAPI(title=f"{cfg.name} · 画像", docs_url=None, redoc_url=None)
+router = APIRouter()
 
 
 class AnswerIn(BaseModel):
@@ -45,26 +42,26 @@ def _question_payload(step: int) -> dict:
     }
 
 
-@app.get("/")
-async def index() -> FileResponse:
+@router.get("/profile")
+async def profile_page() -> FileResponse:
     return FileResponse(cfg.web_dir / "profile.html", headers={"Cache-Control": "no-store"})
 
 
-@app.get("/api/profile")
+@router.get("/api/profile")
 async def get_profile() -> dict:
     profile = store.get_profile()
     profile["questions"] = [q.__dict__ for q in QUESTIONS]
     return profile
 
 
-@app.post("/api/profile/chat/start")
+@router.post("/api/profile/chat/start")
 async def start_chat() -> dict:
     chat_id = uuid.uuid4().hex
     store.start_chat(chat_id)
     return {"id": chat_id, **_question_payload(0)}
 
 
-@app.post("/api/profile/chat/answer")
+@router.post("/api/profile/chat/answer")
 async def answer(payload: AnswerIn) -> dict:
     chat = store.get_chat(payload.id)
     if not chat:
@@ -84,7 +81,7 @@ async def answer(payload: AnswerIn) -> dict:
     return _question_payload(step)
 
 
-@app.post("/api/profile/save")
+@router.post("/api/profile/save")
 async def save(payload: SaveIn) -> dict:
     facts = {k: str(v).strip() for k, v in payload.facts.items() if str(v).strip()}
     narrative = payload.narrative.strip() or build_narrative(facts)

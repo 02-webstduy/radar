@@ -12,15 +12,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from typing import Literal
 
-from .config import load
 from .eval import compare
 from .pipeline import ingest, local_day
-from .storage import Store
+from .profile_routes import router as profile_router
+from .runtime import cfg, store
 
 logger = logging.getLogger("radar")
-cfg = load()
-store = Store(cfg.db_path)
 app = FastAPI(title=cfg.name, docs_url=None, redoc_url=None)
+app.include_router(profile_router)
 
 STALE_SECONDS = 1800  # 半小时内抓过就不重复抓
 _ingest_lock = asyncio.Lock()

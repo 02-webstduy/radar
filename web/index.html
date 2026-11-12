@@ -155,7 +155,7 @@
         <h1>技术雷达</h1>
         <p class="sub" id="sub">正在采集…</p>
       </div>
-      <a class="link" href="http://127.0.0.1:8768/">画像</a>
+      <a class="link" href="/profile">画像</a>
       <button class="refresh" id="eval-btn" type="button">评测</button>
       <button class="refresh" id="refresh" type="button">刷新</button>
     </header>
@@ -332,7 +332,7 @@
             div.className = "banner";
             div.textContent = "还没填画像，现在只按默认关键词筛。";
             const a = document.createElement("a");
-            a.href = "http://127.0.0.1:8768/";
+            a.href = "/profile";
             a.textContent = " 去填（约 3 分钟）";
             div.appendChild(a);
             banner.replaceChildren(div);
