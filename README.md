@@ -31,6 +31,7 @@ data/radar.db      SQLite（git 忽略）
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：分层、三条信息流、数据模型、下一步
 - [docs/SQL.md](docs/SQL.md)：库表设计、DDL、查询、练习题（课程/考试用）
+- [docs/PROFILE_AND_MATCHING.md](docs/PROFILE_AND_MATCHING.md)：画像字段、分层匹配、进度闭环、两周计划
 - `文档解释/`：每轮代码改动的框架与信息流
 
 ## 当前状态
