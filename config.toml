@@ -1,6 +1,8 @@
 [app]
 name = "技术雷达"
 port = 8767
+# 画像入口（聊天/表单）单独一个端口
+profile_port = 8768
 
 [profile]
 role = "engineer"

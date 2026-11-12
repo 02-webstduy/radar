@@ -10,15 +10,23 @@ import json
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="radar")
     parser.add_argument("cmd", nargs="?", default="run",
-                        choices=["run", "ingest", "serve", "stats"])
+                        choices=["run", "ingest", "serve", "profile", "stats"])
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
-    if args.cmd == "serve":
+    if args.cmd in ("serve", "profile"):
         from .config import load
 
         cfg = load()
         import uvicorn
+
+        if args.cmd == "profile":
+            print(f"{cfg.name} · 画像 · http://127.0.0.1:{cfg.profile_port}")
+            uvicorn.run(
+                "radar.profile_app:app", host="127.0.0.1", port=cfg.profile_port,
+                log_level="warning", access_log=False,
+            )
+            return
 
         print(f"{cfg.name} · http://127.0.0.1:{cfg.port}")
         uvicorn.run(

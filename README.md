@@ -8,7 +8,8 @@
 cd radar
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/python -m radar ingest     # 抓一次并入库
-.venv/bin/python -m radar serve      # http://127.0.0.1:8767
+.venv/bin/python -m radar serve      # 雷达 http://127.0.0.1:8767
+.venv/bin/python -m radar profile    # 画像 http://127.0.0.1:8768
 ```
 
 可选：`GITHUB_TOKEN=...` 写进 `.env`，GitHub 源更稳（匿名额度低）。需要翻墙的源可以 `HTTPS_PROXY=http://127.0.0.1:17890`。
@@ -36,5 +37,5 @@ data/radar.db      SQLite（git 忽略）
 
 ## 当前状态
 
-P0：采集 + 关键词筛选 + 落库 + 只读页面。
-`feedback` 已能写入，但还没参与排序；"每周三问 + 方向卡"未开始。
+P0：采集 + 画像驱动排序 + 落库 + 只读页面 + 标注评测。
+画像有聊天/表单两种入口（8768）；方向卡未开始。

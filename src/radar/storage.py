@@ -35,7 +35,8 @@ CREATE TABLE IF NOT EXISTS items (
   first_seen_at TEXT NOT NULL,
   last_seen_at  TEXT NOT NULL,
   score         REAL NOT NULL DEFAULT 0,
-  matched       TEXT NOT NULL DEFAULT '[]'
+  matched       TEXT NOT NULL DEFAULT '[]',
+  why           TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS daily (
@@ -50,6 +51,33 @@ CREATE TABLE IF NOT EXISTS feedback (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
   item_id    INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
   action     TEXT NOT NULL CHECK (action IN ('save', 'skip', 'read')),
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS profile (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  narrative  TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS profile_facts (
+  key        TEXT PRIMARY KEY,
+  value      TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0.8,
+  source     TEXT NOT NULL DEFAULT 'chat',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS profile_chat (
+  id         TEXT PRIMARY KEY,
+  step       INTEGER NOT NULL DEFAULT 0,
+  answers    TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS labels (
+  item_id    INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+  relevant   INTEGER NOT NULL,
   created_at TEXT NOT NULL
 );
 
@@ -85,6 +113,9 @@ class Store:
         self._lock = threading.Lock()
         with self.conn:
             self.conn.executescript(SCHEMA)
+            cols = [r["name"] for r in self.conn.execute("PRAGMA table_info(items)")]
+            if "why" not in cols:
+                self.conn.execute("ALTER TABLE items ADD COLUMN why TEXT NOT NULL DEFAULT ''")
 
     # ---------------------------------------------------------- 写入
 
@@ -108,20 +139,21 @@ class Store:
                 """
                 INSERT INTO items
                   (source_id, url, url_key, title, summary, published_at,
-                   first_seen_at, last_seen_at, score, matched)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   first_seen_at, last_seen_at, score, matched, why)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(url_key) DO UPDATE SET
                   title = excluded.title,
                   summary = excluded.summary,
                   published_at = excluded.published_at,
                   last_seen_at = excluded.last_seen_at,
                   score = excluded.score,
-                  matched = excluded.matched
+                  matched = excluded.matched,
+                  why = excluded.why
                 RETURNING id
                 """,
                 (
                     source_id, item.url, url_key, item.title, item.summary,
-                    published, now, now, item.score, matched,
+                    published, now, now, item.score, matched, item.why,
                 ),
             ).fetchone()
             return int(row["id"])
@@ -158,7 +190,7 @@ class Store:
             rows = self.conn.execute(
                 """
                 SELECT i.id, i.title, i.url, i.summary, i.published_at,
-                       i.score, i.matched, s.name AS source
+                       i.score, i.matched, i.why, s.name AS source
                 FROM daily d
                 JOIN items i ON i.id = d.item_id
                 JOIN sources s ON s.id = i.source_id
@@ -196,6 +228,88 @@ class Store:
             total = self.conn.execute("SELECT COUNT(*) AS n FROM items").fetchone()["n"]
             days = self.conn.execute("SELECT COUNT(DISTINCT day) AS n FROM daily").fetchone()["n"]
         return {"items": total, "days": days, "sources": [dict(r) for r in sources]}
+
+    # ---------------------------------------------------------- 画像
+
+    def get_profile(self) -> dict:
+        with self._lock:
+            row = self.conn.execute("SELECT narrative, updated_at FROM profile WHERE id = 1").fetchone()
+            facts = self.conn.execute("SELECT key, value FROM profile_facts").fetchall()
+        return {
+            "facts": {r["key"]: r["value"] for r in facts},
+            "narrative": row["narrative"] if row else "",
+            "updated_at": row["updated_at"] if row else None,
+        }
+
+    def save_profile(self, facts: dict, narrative: str, source: str = "chat") -> None:
+        now = utcnow()
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO profile (id, narrative, updated_at) VALUES (1, ?, ?) "
+                "ON CONFLICT(id) DO UPDATE SET narrative = excluded.narrative, updated_at = excluded.updated_at",
+                (narrative, now),
+            )
+            for key, value in facts.items():
+                self.conn.execute(
+                    "INSERT INTO profile_facts (key, value, confidence, source, updated_at) VALUES (?, ?, ?, ?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value, source = excluded.source, updated_at = excluded.updated_at",
+                    (str(key), str(value), 0.8, source, now),
+                )
+
+    def start_chat(self, chat_id: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO profile_chat (id, step, answers, updated_at) VALUES (?, 0, '{}', ?)",
+                (chat_id, utcnow()),
+            )
+
+    def get_chat(self, chat_id: str) -> dict | None:
+        with self._lock:
+            row = self.conn.execute("SELECT * FROM profile_chat WHERE id = ?", (chat_id,)).fetchone()
+        if not row:
+            return None
+        return {"id": row["id"], "step": row["step"], "answers": json.loads(row["answers"])}
+
+    def save_chat(self, chat_id: str, step: int, answers: dict) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "UPDATE profile_chat SET step = ?, answers = ?, updated_at = ? WHERE id = ?",
+                (step, json.dumps(answers, ensure_ascii=False), utcnow(), chat_id),
+            )
+
+    # ---------------------------------------------------------- 标注
+
+    def add_label(self, item_id: int, relevant: bool) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO labels (item_id, relevant, created_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(item_id) DO UPDATE SET relevant = excluded.relevant, created_at = excluded.created_at",
+                (item_id, 1 if relevant else 0, utcnow()),
+            )
+
+    def labels(self) -> dict[int, int]:
+        with self._lock:
+            rows = self.conn.execute("SELECT item_id, relevant FROM labels").fetchall()
+        return {r["item_id"]: r["relevant"] for r in rows}
+
+    def labeled_items(self) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                """
+                SELECT i.id, i.title, i.summary, i.score, i.why, i.matched, s.name AS source
+                FROM labels l JOIN items i ON i.id = l.item_id JOIN sources s ON s.id = i.source_id
+                ORDER BY l.created_at DESC
+                """
+            ).fetchall()
+        out = []
+        for row in rows:
+            d = dict(row)
+            try:
+                d["matched"] = json.loads(d["matched"])
+            except json.JSONDecodeError:
+                d["matched"] = []
+            out.append(d)
+        return out
 
     def close(self) -> None:
         self.conn.close()

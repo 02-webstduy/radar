@@ -1,4 +1,4 @@
-"""HTTP 层：页面、当日榜单、反馈、统计。数据从 SQLite 读。"""
+"""HTTP 层：页面、当日榜单、反馈、标注评测。数据从 SQLite 读。"""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from typing import Literal
 
 from .config import load
+from .eval import compare
 from .pipeline import ingest, local_day
 from .storage import Store
 
@@ -35,18 +36,22 @@ def _epoch(iso: str | None) -> float | None:
 
 
 def _fresh(day: str) -> bool:
-    """当天有榜单，且最近一次成功抓取在半小时内。"""
+    """当天有榜单，最近成功抓取在半小时内，且画像没有更新过。"""
     if not store.top_items(day):
         return False
     last = store.last_run()
     if not last or last["status"] != "ok":
         return False
     at = _epoch(last["finished_at"])
-    return bool(at) and time.time() - at < STALE_SECONDS
+    if not at or time.time() - at >= STALE_SECONDS:
+        return False
+    profile = store.get_profile()
+    if profile["updated_at"] and last["finished_at"] and profile["updated_at"] > last["finished_at"]:
+        return False  # 画像改过，重新排一次
+    return True
 
 
 async def ensure_today() -> None:
-    """当天没数据、或上次抓取超过半小时，就重新抓一次。失败保留旧数据。"""
     day = local_day(cfg)
     if _fresh(day):
         return
@@ -64,8 +69,9 @@ async def items() -> dict:
     await ensure_today()
     day = local_day(cfg)
     last = store.last_run()
+    profile = store.get_profile()
     rows = store.top_items(day)
-    items = [
+    payload = [
         {
             "id": r["id"],
             "title": r["title"],
@@ -75,6 +81,7 @@ async def items() -> dict:
             "published": r["published_at"],
             "score": r["score"],
             "matched": r["matched"],
+            "why": r.get("why", ""),
         }
         for r in rows
     ]
@@ -83,13 +90,20 @@ async def items() -> dict:
         "role": cfg.profile.role,
         "day": day,
         "updated": _epoch(last["finished_at"]) if last else None,
-        "items": items,
+        "profile_ready": bool(profile["facts"]),
+        "labeled": len(store.labels()),
+        "items": payload,
     }
 
 
 class FeedbackIn(BaseModel):
     item_id: int = Field(gt=0)
     action: Literal["save", "skip", "read"]
+
+
+class LabelIn(BaseModel):
+    item_id: int = Field(gt=0)
+    relevant: bool
 
 
 @app.post("/api/feedback")
@@ -99,6 +113,20 @@ async def feedback(payload: FeedbackIn) -> dict:
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail="写入反馈失败") from exc
     return {"ok": True}
+
+
+@app.post("/api/label")
+async def label(payload: LabelIn) -> dict:
+    try:
+        store.add_label(payload.item_id, payload.relevant)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail="写入标注失败") from exc
+    return {"ok": True, "labeled": len(store.labels())}
+
+
+@app.get("/api/eval")
+async def evaluate() -> dict:
+    return compare(store, cfg, store.get_profile())
 
 
 @app.get("/api/stats")

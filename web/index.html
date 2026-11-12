@@ -111,6 +111,25 @@
         border: 1px solid rgba(232, 168, 106, .18); border-radius: 6px; padding: 1px 6px;
       }
 
+      .why { margin: 7px 0 0; font-size: 12.5px; color: #d8b08a; }
+      .label-row { display: flex; gap: 6px; margin-top: 9px; }
+      .lbtn {
+        border: 1px solid var(--line); background: transparent; color: var(--muted);
+        border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 11.5px; cursor: pointer;
+      }
+      .lbtn[aria-pressed="true"] { color: #2a1c10; background: var(--accent); border-color: var(--accent); }
+      .eval-line { color: var(--muted); font-size: 12px; padding: 0 0 10px; min-height: 16px; }
+      .banner {
+        border: 1px dashed #57483c; border-radius: 12px; padding: 10px 12px;
+        margin-bottom: 12px; font-size: 13px; color: #d8b08a;
+      }
+      .banner a { color: var(--accent); }
+      .link {
+        color: var(--muted); font-size: 12px; text-decoration: none;
+        border: 1px solid var(--line); border-radius: 999px; padding: 6px 11px;
+      }
+      .link:hover { color: var(--text); }
+
       /* 状态 */
       .hint { color: var(--muted); text-align: center; font-size: 13px; padding: 28px 0; }
       .skeleton {
@@ -136,10 +155,14 @@
         <h1>技术雷达</h1>
         <p class="sub" id="sub">正在采集…</p>
       </div>
+      <a class="link" href="http://127.0.0.1:8768/">画像</a>
+      <button class="refresh" id="eval-btn" type="button">评测</button>
       <button class="refresh" id="refresh" type="button">刷新</button>
     </header>
 
     <nav class="filters" id="filters" aria-label="按来源筛选"></nav>
+    <div id="banner"></div>
+    <div class="eval-line" id="eval-line"></div>
     <main id="list" aria-live="polite"></main>
     <footer>关键词筛选 · 每天前 8 条<br />来源：GitHub / arXiv / HN / 掘金 / 少数派</footer>
 
@@ -148,6 +171,9 @@
       const sub = document.getElementById("sub");
       const filters = document.getElementById("filters");
       const refresh = document.getElementById("refresh");
+      const evalBtn = document.getElementById("eval-btn");
+      const evalLine = document.getElementById("eval-line");
+      const banner = document.getElementById("banner");
 
       const SOURCE_ORDER = ["GitHub", "arXiv", "HN", "掘金", "少数派"];
       const ROLE = { engineer: "工程师", researcher: "科研" };
@@ -193,6 +219,7 @@
           const card = document.createElement("article");
           card.className = "card";
           card.dataset.src = it.source;
+          card.dataset.id = it.id;
 
           const top = document.createElement("div");
           top.className = "card-top";
@@ -230,8 +257,54 @@
             card.appendChild(kw);
           }
 
+          if (it.why) {
+            const w = document.createElement("p");
+            w.className = "why";
+            w.textContent = "为什么给你：" + it.why;
+            card.appendChild(w);
+          }
+
+          const labelRow = document.createElement("div");
+          labelRow.className = "label-row";
+          const yes = document.createElement("button");
+          yes.className = "lbtn"; yes.dataset.rel = "1"; yes.textContent = "相关";
+          const no = document.createElement("button");
+          no.className = "lbtn"; no.dataset.rel = "0"; no.textContent = "不相关";
+          yes.addEventListener("click", () => label(it.id, true));
+          no.addEventListener("click", () => label(it.id, false));
+          labelRow.append(yes, no);
+          card.appendChild(labelRow);
+
           list.appendChild(card);
         }
+      }
+
+      async function label(itemId, relevant) {
+        const res = await fetch("/api/label", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ item_id: itemId, relevant }),
+        });
+        const d = await res.json();
+        const card = document.querySelector(`.card[data-id="${itemId}"]`);
+        if (card) {
+          card.querySelectorAll(".lbtn").forEach((b) => b.removeAttribute("aria-pressed"));
+          const btn = card.querySelector(`.lbtn[data-rel="${relevant ? 1 : 0}"]`);
+          if (btn) btn.setAttribute("aria-pressed", "true");
+        }
+        evalLine.textContent = `已标注 ${d.labeled} 条，点「评测」看 nDCG`;
+      }
+
+      async function showEval() {
+        const res = await fetch("/api/eval");
+        const d = await res.json();
+        if (!d.labeled) {
+          evalLine.textContent = d.message || "先点几条「相关 / 不相关」";
+          return;
+        }
+        evalLine.textContent =
+          `已标 ${d.labeled} 条 · nDCG@${d.k} 画像 ${d.profile.ndcg} / 关键词 ${d.keyword.ndcg}` +
+          ` · P@${d.k} 画像 ${d.profile.precision} / 关键词 ${d.keyword.precision}`;
       }
 
       function skeleton() {
@@ -252,6 +325,18 @@
           data = await res.json();
           const when = data.updated ? new Date(data.updated * 1000).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : "";
           sub.textContent = `${ROLE[data.role] || data.role} · ${data.items.length} 条` + (when ? ` · ${when} 更新` : "");
+          if (data.profile_ready) {
+            banner.replaceChildren();
+          } else {
+            const div = document.createElement("div");
+            div.className = "banner";
+            div.textContent = "还没填画像，现在只按默认关键词筛。";
+            const a = document.createElement("a");
+            a.href = "http://127.0.0.1:8768/";
+            a.textContent = " 去填（约 3 分钟）";
+            div.appendChild(a);
+            banner.replaceChildren(div);
+          }
           renderFilters();
           renderList();
         } catch (err) {
@@ -267,6 +352,7 @@
       }
 
       refresh.addEventListener("click", load);
+      evalBtn.addEventListener("click", showEval);
       load();
     </script>
   </body>

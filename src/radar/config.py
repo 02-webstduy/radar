@@ -23,6 +23,7 @@ class Config:
     name: str
     port: int
     profile: Profile
+    profile_port: int = 8768
     weights: dict[str, float] = field(default_factory=dict)
     db_path: Path = ROOT / "data" / "radar.db"
     timezone: str = "Asia/Shanghai"
@@ -55,6 +56,7 @@ def load() -> Config:
     return Config(
         name=str(app.get("name", "技术雷达")),
         port=int(os.environ.get("RADAR_PORT") or app.get("port", 8767)),
+        profile_port=int(os.environ.get("RADAR_PROFILE_PORT") or app.get("profile_port", 8768)),
         profile=Profile(
             role=str(profile.get("role", "engineer")),
             keywords=tuple(str(k) for k in profile.get("keywords", [])),

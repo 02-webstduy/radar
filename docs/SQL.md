@@ -88,6 +88,40 @@ CREATE INDEX idx_daily_day_rank  ON daily(day, rank);
 CREATE INDEX idx_feedback_item   ON feedback(item_id);
 ```
 
+### 画像与标注（后加的四张表）
+
+```sql
+CREATE TABLE profile (            -- 只有一行，id 固定为 1
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  narrative TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE profile_facts (      -- 键值对：goal / stack / learning ...
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0.8,
+  source TEXT NOT NULL DEFAULT 'chat',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE profile_chat (       -- 聊天会话的进度
+  id TEXT PRIMARY KEY,
+  step INTEGER NOT NULL DEFAULT 0,
+  answers TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL
+);
+
+CREATE TABLE labels (             -- 人工标注：1 相关 / 0 不相关
+  item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
+  relevant INTEGER NOT NULL,
+  created_at TEXT NOT NULL
+);
+```
+
+关系：`profile 1—N profile_facts`（键值对，没有外键）、`items 1—1 labels`。
+`profile_chat` 是过程表，答完才写 `profile_facts`。
+
 ## 5. 三条必会查询
 
 ```sql

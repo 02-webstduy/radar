@@ -15,6 +15,7 @@ class Item:
     published: datetime | None = None
     score: float = 0.0
     matched: list[str] = field(default_factory=list)
+    why: str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -25,4 +26,5 @@ class Item:
             "published": self.published.isoformat() if self.published else None,
             "score": round(self.score, 2),
             "matched": self.matched,
+            "why": self.why,
         }
