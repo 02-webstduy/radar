@@ -1,4 +1,4 @@
-"""画像页面与接口：挂在主站点 /profile，不再单开端口。"""
+"""画像页面与接口：自由聊天 → 抽取 → 用户确认；表单作为备用入口。"""
 
 from __future__ import annotations
 
@@ -8,38 +8,28 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from .profile_flow import QUESTIONS, build_narrative, derive_keywords, question_at
+from . import llm
+from .profile_chat import GREETING, SYSTEM, extract, is_ready
+from .profile_flow import QUESTIONS, build_narrative, derive_keywords
 from .runtime import cfg, store
 
 router = APIRouter()
 
+MAX_TURNS = 12
 
-class AnswerIn(BaseModel):
+
+class SendIn(BaseModel):
     id: str
-    answer: str = ""
+    text: str
+
+
+class DraftIn(BaseModel):
+    id: str
 
 
 class SaveIn(BaseModel):
     facts: dict[str, str]
     narrative: str = ""
-
-
-def _question_payload(step: int) -> dict:
-    q = question_at(step)
-    if q is None:
-        return {"done": True, "step": step, "total": len(QUESTIONS)}
-    return {
-        "done": False,
-        "step": step + 1,
-        "total": len(QUESTIONS),
-        "question": {
-            "key": q.key,
-            "text": q.text,
-            "hint": q.hint,
-            "options": list(q.options),
-            "multi": q.multi,
-        },
-    }
 
 
 @router.get("/profile")
@@ -58,27 +48,49 @@ async def get_profile() -> dict:
 async def start_chat() -> dict:
     chat_id = uuid.uuid4().hex
     store.start_chat(chat_id)
-    return {"id": chat_id, **_question_payload(0)}
+    store.add_message(chat_id, "assistant", GREETING)
+    return {"id": chat_id, "reply": GREETING}
 
 
-@router.post("/api/profile/chat/answer")
-async def answer(payload: AnswerIn) -> dict:
-    chat = store.get_chat(payload.id)
-    if not chat:
+@router.post("/api/profile/chat/send")
+async def send(payload: SendIn) -> dict:
+    if not store.chat_exists(payload.id):
         raise HTTPException(status_code=404, detail="会话不存在")
-    q = question_at(chat["step"])
-    if q is None:
-        raise HTTPException(status_code=400, detail="会话已结束")
-    answers = chat["answers"]
-    answers[q.key] = payload.answer.strip()
-    step = chat["step"] + 1
-    store.save_chat(payload.id, step, answers)
-    if step >= len(QUESTIONS):
-        facts = dict(answers)
-        facts["keywords"] = ",".join(derive_keywords(facts, cfg))
-        store.save_profile(facts, build_narrative(facts), source="chat")
-        return {"done": True, "facts": facts, "narrative": build_narrative(facts)}
-    return _question_payload(step)
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="空消息")
+
+    store.add_message(payload.id, "user", text)
+    messages = store.get_messages(payload.id, limit=24)
+    turns = sum(1 for m in messages if m["role"] == "user")
+
+    if is_ready(text, turns) or turns >= MAX_TURNS:
+        reply = "好，我来整理画像。"
+        store.add_message(payload.id, "assistant", reply)
+        try:
+            draft = await extract(cfg, store.get_messages(payload.id, limit=50))
+        except llm.LLMError as exc:
+            raise HTTPException(status_code=502, detail=str(exc)) from exc
+        return {"reply": reply, "ready": True, "draft": draft}
+
+    convo = [{"role": "system", "content": SYSTEM}] + messages[-16:]
+    try:
+        reply = await llm.chat(cfg.llm, convo, temperature=0.7, max_tokens=300)
+    except llm.LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    reply = reply.strip()
+    store.add_message(payload.id, "assistant", reply)
+    return {"reply": reply, "ready": False}
+
+
+@router.post("/api/profile/draft")
+async def draft(payload: DraftIn) -> dict:
+    if not store.chat_exists(payload.id):
+        raise HTTPException(status_code=404, detail="会话不存在")
+    try:
+        return await extract(cfg, store.get_messages(payload.id, limit=50))
+    except llm.LLMError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
 
 
 @router.post("/api/profile/save")
@@ -86,5 +98,5 @@ async def save(payload: SaveIn) -> dict:
     facts = {k: str(v).strip() for k, v in payload.facts.items() if str(v).strip()}
     narrative = payload.narrative.strip() or build_narrative(facts)
     facts["keywords"] = ",".join(derive_keywords(facts, cfg))
-    store.save_profile(facts, narrative, source="form")
+    store.save_profile(facts, narrative, source="chat")
     return {"ok": True, "facts": facts, "narrative": narrative}

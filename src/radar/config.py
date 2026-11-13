@@ -19,6 +19,15 @@ class Profile:
 
 
 @dataclass(frozen=True)
+class LLMConfig:
+    enabled: bool = True
+    base_url: str = "http://127.0.0.1:8000/v1"
+    model: str = "Qwen2.5-7B-Instruct"
+    api_key_env: str = ""
+    timeout_s: float = 90.0
+
+
+@dataclass(frozen=True)
 class Config:
     name: str
     port: int
@@ -26,6 +35,7 @@ class Config:
     weights: dict[str, float] = field(default_factory=dict)
     db_path: Path = ROOT / "data" / "radar.db"
     timezone: str = "Asia/Shanghai"
+    llm: LLMConfig = LLMConfig()
     web_dir: Path = ROOT / "web"
 
 
@@ -48,6 +58,7 @@ def load() -> Config:
     profile = raw.get("profile", {})
     src = raw.get("source", {})
     storage = raw.get("storage", {})
+    llm = raw.get("llm", {})
     db_path = Path(str(storage.get("path", "data/radar.db")))
     if not db_path.is_absolute():
         db_path = ROOT / db_path
@@ -64,4 +75,11 @@ def load() -> Config:
         weights={str(k): float(v) for k, v in src.get("weights", {}).items()},
         db_path=db_path,
         timezone=str(storage.get("timezone", "Asia/Shanghai")),
+        llm=LLMConfig(
+            enabled=bool(llm.get("enabled", True)),
+            base_url=str(llm.get("base_url", "http://127.0.0.1:8000/v1")).rstrip("/"),
+            model=str(llm.get("model", "Qwen2.5-7B-Instruct")),
+            api_key_env=str(llm.get("api_key_env", "")),
+            timeout_s=float(llm.get("timeout_s", 90)),
+        ),
     )

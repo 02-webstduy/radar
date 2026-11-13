@@ -24,3 +24,11 @@ timezone = "Asia/Shanghai"
 
 [source]
 weights = { github = 1.0, arxiv = 1.0, hn = 0.9, juejin = 1.0, sspai = 1.0 }
+
+[llm]
+# 画像聊天/抽取用；换 DeepSeek 只改 base_url/model，key 写 .env
+enabled = true
+base_url = "http://vllm-qwen:8000/v1"
+model = "/workspace/models/Qwen2.5-7B-AWQ"
+api_key_env = ""
+timeout_s = 90

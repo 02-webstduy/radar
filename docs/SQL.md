@@ -112,6 +112,14 @@ CREATE TABLE profile_chat (       -- 聊天会话的进度
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE profile_messages (   -- 自由聊天的消息
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id TEXT NOT NULL,
+  role TEXT NOT NULL,             -- user / assistant
+  content TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE labels (             -- 人工标注：1 相关 / 0 不相关
   item_id INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
   relevant INTEGER NOT NULL,

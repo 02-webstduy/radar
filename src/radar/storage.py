@@ -75,6 +75,17 @@ CREATE TABLE IF NOT EXISTS profile_chat (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS profile_messages (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id    TEXT NOT NULL,
+  role       TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_profile_messages_chat
+  ON profile_messages(chat_id, id);
+
 CREATE TABLE IF NOT EXISTS labels (
   item_id    INTEGER PRIMARY KEY REFERENCES items(id) ON DELETE CASCADE,
   relevant   INTEGER NOT NULL,
@@ -269,6 +280,28 @@ class Store:
         if not row:
             return None
         return {"id": row["id"], "step": row["step"], "answers": json.loads(row["answers"])}
+
+    def chat_exists(self, chat_id: str) -> bool:
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT 1 FROM profile_chat WHERE id = ?", (chat_id,)
+            ).fetchone()
+        return row is not None
+
+    def add_message(self, chat_id: str, role: str, content: str) -> None:
+        with self._lock, self.conn:
+            self.conn.execute(
+                "INSERT INTO profile_messages (chat_id, role, content, created_at) VALUES (?, ?, ?, ?)",
+                (chat_id, role, content, utcnow()),
+            )
+
+    def get_messages(self, chat_id: str, limit: int = 50) -> list[dict]:
+        with self._lock:
+            rows = self.conn.execute(
+                "SELECT role, content FROM profile_messages WHERE chat_id = ? ORDER BY id DESC LIMIT ?",
+                (chat_id, limit),
+            ).fetchall()
+        return [{"role": r["role"], "content": r["content"]} for r in reversed(rows)]
 
     def save_chat(self, chat_id: str, step: int, answers: dict) -> None:
         with self._lock, self.conn:

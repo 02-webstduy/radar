@@ -18,31 +18,31 @@
       .link { color:var(--muted); font-size:12px; text-decoration:none; border:1px solid var(--line); border-radius:999px; padding:4px 10px; }
       .link:hover { color:var(--text); }
       .sub { color:var(--muted); font-size:12.5px; margin:0 0 14px; }
-      .bar { height:3px; background:var(--line); border-radius:99px; overflow:hidden; margin-bottom:16px; }
-      .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .25s ease; }
       .msg { display:flex; margin:8px 0; }
       .msg.user { justify-content:flex-end; }
       .bubble { max-width:82%; padding:10px 14px; border-radius:14px; white-space:pre-wrap; }
       .msg.ai .bubble { background:var(--panel); border:1px solid var(--line); border-bottom-left-radius:5px; }
       .msg.user .bubble { background:#3a2b1e; border-bottom-right-radius:5px; }
-      .hint { color:var(--muted); font-size:12px; margin-top:4px; }
-      .chips { display:flex; flex-wrap:wrap; gap:7px; margin:10px 0; }
-      .chip { border:1px solid var(--line); background:transparent; color:var(--muted); border-radius:999px; padding:5px 12px; font:inherit; font-size:13px; cursor:pointer; }
-      .chip[aria-pressed="true"] { background:var(--accent); color:#2a1c10; border-color:var(--accent); }
+      .msg.sys .bubble { background:transparent; border:1px dashed var(--line); color:var(--muted); font-size:12.5px; }
+      .msg.sys { justify-content:center; }
+      .thinking::after { content:"···"; color:var(--muted); letter-spacing:2px; }
       .row { display:flex; gap:8px; margin-top:10px; }
-      input[type="text"], textarea {
+      input, textarea {
         flex:1; background:var(--bg); color:var(--text); border:1px solid var(--line);
-        border-radius:12px; padding:10px 12px; font:inherit; outline:none;
+        border-radius:12px; padding:10px 12px; font:inherit; outline:none; width:100%;
       }
-      input[type="text"]:focus, textarea:focus { border-color:#57483c; }
+      input:focus, textarea:focus { border-color:#57483c; }
       button.primary { background:var(--accent); color:#2a1c10; border:none; border-radius:12px; padding:10px 16px; font:inherit; font-weight:600; cursor:pointer; }
       button.ghost { background:transparent; color:var(--muted); border:1px solid var(--line); border-radius:12px; padding:8px 12px; font:inherit; font-size:13px; cursor:pointer; }
       .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:16px; margin-top:12px; }
-      .field { margin:10px 0; }
-      .field label { display:block; font-size:12px; color:var(--muted); margin-bottom:4px; }
-      .field input, .field textarea { width:100%; }
-      .ok { color:#7fbf8a; font-size:13px; }
-      .hidden { display:none; }
+      .field { margin:12px 0; }
+      .field-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+      .field-head label { font-size:12px; color:var(--muted); }
+      .badge { font-size:10.5px; border-radius:999px; padding:1px 7px; border:1px solid var(--line); color:var(--muted); }
+      .badge.hi { color:#7fbf8a; border-color:#3f5a44; }
+      .badge.mid { color:#e0b072; border-color:#5a4a35; }
+      .ev { font-size:11.5px; color:#8f8176; margin-top:4px; }
+      .ok { color:#7fbf8a; font-size:13px; margin-top:8px; }
     </style>
   </head>
   <body>
@@ -51,30 +51,26 @@
       <a class="link" href="/">回到雷达</a>
       <button class="ghost" id="mode-btn" type="button">直接填表</button>
     </header>
-    <p class="sub" id="sub">8 个问题，约 3 分钟；答完可以改。</p>
-    <div class="bar"><i id="bar"></i></div>
+    <p class="sub" id="sub">随便聊，AI 会从对话里整理画像；不对可以改。</p>
 
     <div id="chat"></div>
     <div id="dock"></div>
-    <div id="summary"></div>
+    <div id="draft"></div>
 
     <script>
       const chat = document.getElementById("chat");
       const dock = document.getElementById("dock");
-      const summary = document.getElementById("summary");
-      const bar = document.getElementById("bar");
+      const draftBox = document.getElementById("draft");
       const sub = document.getElementById("sub");
       const modeBtn = document.getElementById("mode-btn");
 
+      let chatId = null;
       let questions = [];
-      let session = null;
-      let current = null;
-      let selected = new Set();
-      let mode = "chat";
+      let busy = false;
 
       function bubble(role, text) {
         const row = document.createElement("div");
-        row.className = "msg " + (role === "user" ? "user" : "ai");
+        row.className = "msg " + role;
         const b = document.createElement("div");
         b.className = "bubble";
         b.textContent = text;
@@ -84,138 +80,140 @@
         return b;
       }
 
-      function setProgress(step, total) {
-        bar.style.width = total ? `${Math.round((step / total) * 100)}%` : "0";
+      function system(text) { bubble("sys", text); }
+
+      async function post(url, body) {
+        const res = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body || {}),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `请求失败（${res.status}）`);
+        return data;
       }
 
-      function clearDock() { dock.replaceChildren(); }
-
-      function addOptions(q) {
-        const chips = document.createElement("div");
-        chips.className = "chips";
-        for (const opt of q.options || []) {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "chip";
-          b.textContent = opt;
-          b.setAttribute("aria-pressed", String(selected.has(opt)));
-          b.addEventListener("click", () => {
-            if (q.multi) {
-              selected.has(opt) ? selected.delete(opt) : selected.add(opt);
-              b.setAttribute("aria-pressed", String(selected.has(opt)));
-            } else {
-              submit(opt);
-            }
-          });
-          chips.appendChild(b);
-        }
-        dock.appendChild(chips);
-      }
-
-      function addComposer(q) {
+      function addComposer() {
+        dock.replaceChildren();
         const row = document.createElement("div");
         row.className = "row";
         const input = document.createElement("input");
         input.type = "text";
-        input.placeholder = q.multi ? "也可以自己补，用逗号分隔" : "也可以直接打字";
+        input.placeholder = "像聊天一样说就行…";
         const send = document.createElement("button");
         send.className = "primary";
-        send.textContent = q.multi ? "下一题" : "发送";
-        send.addEventListener("click", () => {
-          const typed = input.value.trim();
-          if (q.multi) {
-            const values = [...selected];
-            if (typed) values.push(...typed.split(/[,，]/).map((s) => s.trim()).filter(Boolean));
-            submit(values.join(", "));
-          } else if (typed) {
-            submit(typed);
-          }
-        });
+        send.textContent = "发送";
+        const summarize = document.createElement("button");
+        summarize.className = "ghost";
+        summarize.textContent = "生成画像";
+        summarize.addEventListener("click", () => makeDraft());
+
+        async function submit() {
+          const text = input.value.trim();
+          if (!text || busy) return;
+          input.value = "";
+          await sendText(text);
+        }
+        send.addEventListener("click", submit);
         input.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") { e.preventDefault(); send.click(); }
+          if (e.key === "Enter") { e.preventDefault(); submit(); }
         });
-        row.append(input, send);
+        row.append(input, send, summarize);
         dock.appendChild(row);
         input.focus();
       }
 
-      async function submit(answer) {
-        if (!answer) return;
-        bubble("user", answer);
-        clearDock();
-        const res = await fetch("/api/profile/chat/answer", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: session, answer }),
-        });
-        const data = await res.json();
-        if (data.done) {
-          showSummary(data.facts, data.narrative);
-          return;
+      async function sendText(text) {
+        if (!chatId) return;
+        busy = true;
+        bubble("user", text);
+        const thinking = bubble("ai", "");
+        thinking.classList.add("thinking");
+        try {
+          const data = await post("/api/profile/chat/send", { id: chatId, text });
+          thinking.classList.remove("thinking");
+          thinking.textContent = data.reply || "";
+          if (data.ready && data.draft) showDraft(data.draft);
+        } catch (err) {
+          thinking.classList.remove("thinking");
+          thinking.textContent = "";
+          thinking.parentElement.remove();
+          system(err.message);
+        } finally {
+          busy = false;
         }
-        renderQuestion(data);
-      }
-
-      function renderQuestion(data) {
-        current = data;
-        selected = new Set();
-        const q = data.question;
-        const b = bubble("ai", q.text);
-        if (q.hint) {
-          const h = document.createElement("div");
-          h.className = "hint";
-          h.textContent = q.hint;
-          b.appendChild(h);
-        }
-        sub.textContent = `第 ${data.step} / ${data.total} 题 · 答完可以改`;
-        setProgress(data.step, data.total);
-        clearDock();
-        addOptions(q);
-        addComposer(q);
       }
 
       async function startChat() {
         chat.replaceChildren();
-        summary.replaceChildren();
-        const res = await fetch("/api/profile/chat/start", { method: "POST" });
-        const data = await res.json();
-        session = data.id;
-        renderQuestion(data);
+        draftBox.replaceChildren();
+        const data = await post("/api/profile/chat/start");
+        chatId = data.id;
+        bubble("ai", data.reply);
+        addComposer();
       }
 
-      function showSummary(facts, narrative) {
-        mode = "summary";
-        clearDock();
-        setProgress(1, 1);
-        sub.textContent = "这是它理解的你；不对就直接改，改完保存。";
-        summary.replaceChildren();
+      async function makeDraft() {
+        if (!chatId || busy) return;
+        busy = true;
+        system("正在整理画像…");
+        try {
+          const data = await post("/api/profile/draft", { id: chatId });
+          showDraft(data);
+        } catch (err) {
+          system(err.message);
+        } finally {
+          busy = false;
+        }
+      }
+
+      function showDraft(data) {
+        draftBox.replaceChildren();
         const card = document.createElement("div");
         card.className = "card";
-        const fields = [
-          ["goal", "目标"], ["project", "当前项目"], ["stack", "会的"],
-          ["learning", "在学"], ["hours", "每周小时"], ["interests", "想多看"],
-          ["avoid", "不想看"], ["format", "偏好"],
-        ];
-        const draft = { ...facts };
-        for (const [key, label] of fields) {
+
+        const title = document.createElement("p");
+        title.textContent = "这是我从对话里读到的你。数字是置信度，字段可以直接改。";
+        title.style.margin = "0 0 4px";
+        card.appendChild(title);
+
+        const draft = { ...(data.facts || {}) };
+        const conf = data.confidence || {};
+        const ev = data.evidence || {};
+
+        for (const q of questions) {
           const wrap = document.createElement("div");
           wrap.className = "field";
+          const head = document.createElement("div");
+          head.className = "field-head";
           const lb = document.createElement("label");
-          lb.textContent = label;
-          const inp = document.createElement("input");
-          inp.type = "text";
-          inp.value = draft[key] || "";
-          inp.addEventListener("input", () => { draft[key] = inp.value; });
-          wrap.append(lb, inp);
+          lb.textContent = q.text.replace(/（.*?）/g, "");
+          const badge = document.createElement("span");
+          const c = conf[q.key] || 0;
+          badge.className = "badge " + (c >= 0.8 ? "hi" : c >= 0.5 ? "mid" : "");
+          badge.textContent = c ? `置信度 ${c}` : (draft[q.key] ? "已有" : "未提到");
+          head.append(lb, badge);
+
+          const input = document.createElement("input");
+          input.type = "text";
+          input.value = draft[q.key] || "";
+          input.addEventListener("input", () => { draft[q.key] = input.value; });
+
+          const evEl = document.createElement("div");
+          evEl.className = "ev";
+          evEl.textContent = ev[q.key] ? "依据：" + ev[q.key] : "";
+
+          wrap.append(head, input, evEl);
           card.appendChild(wrap);
         }
+
         const narrWrap = document.createElement("div");
         narrWrap.className = "field";
         const nl = document.createElement("label");
         nl.textContent = "一段自述";
         const ta = document.createElement("textarea");
         ta.rows = 3;
-        ta.value = narrative || "";
+        ta.value = data.narrative || "";
         narrWrap.append(nl, ta);
         card.appendChild(narrWrap);
 
@@ -224,35 +222,31 @@
         const save = document.createElement("button");
         save.className = "primary";
         save.textContent = "保存画像";
+        save.addEventListener("click", async () => {
+          try {
+            await post("/api/profile/save", { facts: draft, narrative: ta.value });
+            const ok = document.createElement("p");
+            ok.className = "ok";
+            ok.textContent = "已保存。回雷达页看今天的 8 条。";
+            card.appendChild(ok);
+          } catch (err) {
+            system(err.message);
+          }
+        });
         const again = document.createElement("button");
         again.className = "ghost";
         again.textContent = "重新聊";
-        again.addEventListener("click", startChat);
-        save.addEventListener("click", async () => {
-          const res = await fetch("/api/profile/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ facts: draft, narrative: ta.value }),
-          });
-          if (res.ok) {
-            const msg = document.createElement("p");
-            msg.className = "ok";
-            msg.textContent = "已保存。去雷达页看看今天的 8 条。";
-            card.appendChild(msg);
-          }
-        });
+        again.addEventListener("click", () => { startChat(); });
         row.append(save, again);
         card.appendChild(row);
-        summary.appendChild(card);
+
+        draftBox.appendChild(card);
         window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
       }
 
       function renderForm() {
-        mode = "form";
         chat.replaceChildren();
-        summary.replaceChildren();
-        clearDock();
-        setProgress(1, 1);
+        draftBox.replaceChildren();
         sub.textContent = "直接填，保存后随时可以回来改。";
         const card = document.createElement("div");
         card.className = "card";
@@ -262,11 +256,11 @@
           wrap.className = "field";
           const lb = document.createElement("label");
           lb.textContent = q.text.replace(/（.*?）/g, "");
-          const inp = document.createElement("input");
-          inp.type = "text";
-          inp.placeholder = (q.options || []).join(" / ");
-          inp.addEventListener("input", () => { draft[q.key] = inp.value; });
-          wrap.append(lb, inp);
+          const input = document.createElement("input");
+          input.type = "text";
+          input.placeholder = (q.options || []).join(" / ");
+          input.addEventListener("input", () => { draft[q.key] = input.value; });
+          wrap.append(lb, input);
           card.appendChild(wrap);
         }
         const row = document.createElement("div");
@@ -275,27 +269,27 @@
         save.className = "primary";
         save.textContent = "保存";
         save.addEventListener("click", async () => {
-          const res = await fetch("/api/profile/save", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ facts: draft, narrative: "" }),
-          });
-          if (res.ok) {
-            const msg = document.createElement("p");
-            msg.className = "ok";
-            msg.textContent = "已保存。";
-            card.appendChild(msg);
-          }
+          try {
+            await post("/api/profile/save", { facts: draft, narrative: "" });
+            const ok = document.createElement("p");
+            ok.className = "ok";
+            ok.textContent = "已保存。";
+            card.appendChild(ok);
+          } catch (err) { system(err.message); }
         });
         row.appendChild(save);
         card.appendChild(row);
-        summary.appendChild(card);
+        draftBox.appendChild(card);
       }
 
-      modeBtn.addEventListener("click", () => {
-        if (mode === "form") { mode = "chat"; startChat(); }
-        else { renderForm(); }
-        modeBtn.textContent = mode === "form" ? "回到聊天" : "直接填表";
+      modeBtn.addEventListener("click", async () => {
+        if (modeBtn.textContent === "直接填表") {
+          modeBtn.textContent = "回到聊天";
+          renderForm();
+        } else {
+          modeBtn.textContent = "直接填表";
+          await startChat();
+        }
       });
 
       async function init() {
@@ -303,8 +297,13 @@
         const data = await res.json();
         questions = data.questions || [];
         if (data.facts && Object.keys(data.facts).length) {
-          showSummary(data.facts, data.narrative);
-          modeBtn.textContent = "重新聊";
+          sub.textContent = "已有画像；可以重新聊，也可以直接改。";
+          showDraft({
+            facts: data.facts,
+            confidence: {},
+            evidence: {},
+            narrative: data.narrative,
+          });
         } else {
           await startChat();
         }

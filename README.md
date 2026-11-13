@@ -4,6 +4,8 @@
 
 ## 快速开始
 
+画像聊天用的是 OpenAI 兼容接口，模型在 `config.toml [llm]`；换 DeepSeek 只改 base_url/model，key 写 `.env` 的 `XIAOMAN_API_KEY`。
+
 ```bash
 cd radar
 python3 -m venv .venv && .venv/bin/pip install -e .
@@ -32,9 +34,10 @@ data/radar.db      SQLite（git 忽略）
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)：分层、三条信息流、数据模型、下一步
 - [docs/SQL.md](docs/SQL.md)：库表设计、DDL、查询、练习题（课程/考试用）
 - [docs/PROFILE_AND_MATCHING.md](docs/PROFILE_AND_MATCHING.md)：画像字段、分层匹配、进度闭环、两周计划
+- [docs/PROFILE_EVAL.md](docs/PROFILE_EVAL.md)：画像抽取评测（3 案例，87.5%）
 - `文档解释/`：每轮代码改动的框架与信息流
 
 ## 当前状态
 
 P0：采集 + 画像驱动排序 + 落库 + 只读页面 + 标注评测。
-画像有聊天/表单两种入口（页面右上角「画像」，即 /profile）；方向卡未开始。
+画像有自由聊天 + 表单两种入口（右上角「画像」，即 /profile）；聊天由 LLM 抽取画像，带置信度/依据，可改。
