@@ -35,6 +35,7 @@ data/radar.db      SQLite（git 忽略）
 - [docs/SQL.md](docs/SQL.md)：库表设计、DDL、查询、练习题（课程/考试用）
 - [docs/PROFILE_AND_MATCHING.md](docs/PROFILE_AND_MATCHING.md)：画像字段、分层匹配、进度闭环、两周计划
 - [docs/PROFILE_EVAL.md](docs/PROFILE_EVAL.md)：画像抽取评测（3 案例，87.5%）
+- [docs/PROGRESS.md](docs/PROGRESS.md)：进度接入口、准确性校验、第一版设计
 - `文档解释/`：每轮代码改动的框架与信息流
 
 ## 当前状态
